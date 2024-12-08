@@ -3,10 +3,11 @@
         "target": "ES2022",
         "module": "commonjs",
         "rootDir": "./",
-        "outDir": "dist",
+        "outDir": "./dist",
         "strict": true,
         "esModuleInterop": true,
         "useUnknownInCatchVariables": false,
         "strictPropertyInitialization": false,
-    }
+    },
+    "include": ["./src/**/*"]
 }
