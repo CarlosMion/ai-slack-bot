@@ -266,7 +266,6 @@ class AiService {
           count: 3,
         })
       : []
-
     const hasTools = !!tools?.length
     const response = await this.openAi.chat.completions.create({
       model: AI_MODEL,

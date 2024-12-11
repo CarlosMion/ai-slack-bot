@@ -9,7 +9,7 @@ import { DEFAULT_AI_CONTEXT } from "./utils/context"
 import { isBotTaggedInMessage, isDeletingMessage } from "./utils/common"
 import { VIBRANIUM_SLACK_BOT } from "./constants"
 import PineconeService from "./services/pinecone.service"
-import { AnswerProps } from "./types/openAi"
+import { AnswerProps, MESSAGE_ROLE } from "./types/openAi"
 
 class SlackBotApp {
   private slackClient: App
@@ -69,13 +69,12 @@ class SlackBotApp {
   }
 
   private listenToMentions() {
-    this.slackClient.event(
-      "app_mention",
-      async ({ event, say, body, client }) => {
+    this.slackClient.event("app_mention", async ({ event, say, client }) => {
+      try {
+        console.log("Mention received:", event)
+
         const { text, thread_ts, ts, channel, user } = event
 
-        /** if not mentioning in a thread, continue to normal flow */
-        // if (!thread_ts) {
         const answer = await this.aiService.getAiResponse({
           userMessage: {
             content: text,
@@ -85,7 +84,7 @@ class SlackBotApp {
           },
 
           context: [DEFAULT_AI_CONTEXT],
-          tools: [...(thread_ts ? [TAGGED_SUMMARIZE_TOOL] : [])],
+          tools: thread_ts ? [TAGGED_SUMMARIZE_TOOL] : undefined,
           client,
           channel: channel,
           messageSenderId: user || "",
@@ -100,11 +99,24 @@ class SlackBotApp {
             say,
           })
         } else {
-          say("Sorry, I could not understand or process that.")
+          this.answer({
+            channel,
+            content: "Sorry, I could not understand or process that.",
+            messageSenderId: MESSAGE_ROLE.ASSISTANT,
+            threadTs: thread_ts,
+            say,
+          })
         }
+      } catch (error) {
+        this.answer({
+          channel: "",
+          content:
+            "Sorry, There was an internal error while processing your request.",
+          messageSenderId: MESSAGE_ROLE.ASSISTANT,
+          say,
+        })
       }
-      // }
-    )
+    })
   }
 
   private listenToMessages() {
@@ -144,7 +156,6 @@ class SlackBotApp {
             // skip if the message is is not targeted at the bot or is not relevant
             return
           }
-          say("Processing your request, please wait a moment...")
           const messageSenderId = messageElement.user || ""
           const answer = await this.aiService.getAiResponse({
             userMessage: {
@@ -177,6 +188,7 @@ class SlackBotApp {
               channel: message.channel,
               content: answer,
               messageSenderId,
+              threadTs: messageElement.thread_ts,
               say,
             })
           }

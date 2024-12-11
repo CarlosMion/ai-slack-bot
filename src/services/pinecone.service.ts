@@ -155,12 +155,13 @@ class PineconeService {
     count: number
   }): Promise<string[]> {
     const index = await this.getIndex<EmbeddingInfo>(indexName)
-
+    const tenMinutesAgo = Date.now() - 60 * 10 * 1000
     const queryResult = await index.query({
       vector: ZERO_VECTOR,
       topK: count,
       includeMetadata: true,
       includeValues: true,
+      filter: { messageTs: { $gte: tenMinutesAgo } },
     })
     return queryResult.matches.reduce((acc: string[], match) => {
       const content = match.metadata?.content
