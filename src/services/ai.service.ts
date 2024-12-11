@@ -1,8 +1,11 @@
 import { OpenAI } from "openai"
 import {
   GetAiResponseProps,
+  GetSlackThreadByKeywordProps,
+  GetSlackThreadByTSProps,
   MESSAGE_ROLE,
   MessageEmbeddingInput,
+  SUMMARIZATION_DEFAULT_QUERY,
   TOOL_NAME,
 } from "../types/openAi"
 import {
@@ -45,7 +48,97 @@ class AiService {
     this.slackService = slackService
   }
 
-  async callCustomTool({
+  private async getSlackThreadByKeyword({
+    args,
+    channel,
+    client,
+    query,
+  }: GetSlackThreadByKeywordProps) {
+    const threadMessages = await this.pineconeService.getSlackThreadByKeyword({
+      channel,
+      keyword: args.keywords,
+      client,
+    })
+
+    if (threadMessages?.length) {
+      return await this.getAiResponse({
+        channel,
+        client,
+        userMessage: {
+          content: SUMMARIZATION_DEFAULT_QUERY,
+          channel,
+          messageTs: "",
+          parentMessageTs: "",
+        },
+        messageSenderId: "system",
+        context: [
+          DEFAULT_AI_CONTEXT,
+          getContextObjectFromMessage(getSummarizationPrompt(threadMessages)),
+        ],
+      })
+    }
+
+    const aiResponse = await this.getAiResponse({
+      channel,
+      client,
+      userMessage: {
+        content: "come up with a nice error message for: " + query,
+        channel,
+        messageTs: "",
+        parentMessageTs: "",
+      },
+      messageSenderId: MESSAGE_ROLE.SYSTEM,
+      context: [DEFAULT_AI_CONTEXT],
+    })
+
+    return aiResponse
+  }
+
+  private async getSlackThreadByTS({
+    args,
+    channel,
+    client,
+    query,
+  }: GetSlackThreadByTSProps) {
+    const slackThread = await this.slackService.getThreadReplies({
+      ts: args.ts,
+      channel,
+    })
+
+    const messages = slackThread?.messages
+
+    if (messages?.length) {
+      return await this.getAiResponse({
+        channel,
+        client,
+        includeLatestMessages: false,
+        userMessage: {
+          content: SUMMARIZATION_DEFAULT_QUERY,
+          channel,
+          messageTs: "",
+          parentMessageTs: "",
+        },
+        messageSenderId: MESSAGE_ROLE.SYSTEM,
+        context: [
+          DEFAULT_AI_CONTEXT,
+          getContextObjectFromMessage(
+            getSummarizationPrompt(
+              messages?.reduce((acc: string[], message) => {
+                if (message && message.text) {
+                  acc.push(message.text)
+                }
+                return acc
+              }, []) || []
+            )
+          ),
+        ],
+      })
+    }
+
+    return CUSTOM_TOOL_DEFAULT_MESSAGE
+  }
+
+  private async callCustomTool({
     toolName,
     channel,
     args,
@@ -54,86 +147,19 @@ class AiService {
   }: CallCustomToolProps): Promise<string | null> {
     switch (toolName) {
       case TOOL_NAME.SUMMARIZE_SLACK_THREAD_BY_KEYWORD:
-        const keywordToolArguments =
-          args as unknown as SummarizeSlackThreadByKeywordArgs
-        const threadMessages =
-          await this.pineconeService.getSlackThreadByKeyword({
-            channel,
-            keyword: keywordToolArguments.keywords,
-            client,
-          })
-
-        if (threadMessages?.length) {
-          return await this.getAiResponse({
-            channel,
-            client,
-            userMessage: {
-              content:
-                "Get me a summarization of the messages given as context",
-              channel,
-              messageTs: "",
-              parentMessageTs: "",
-            },
-            messageSenderId: "system",
-            context: [
-              DEFAULT_AI_CONTEXT,
-              getContextObjectFromMessage(
-                getSummarizationPrompt(threadMessages)
-              ),
-            ],
-          })
-        }
-
-        const aiResponse = await this.getAiResponse({
-          channel,
+        return this.getSlackThreadByKeyword({
+          args: args as unknown as SummarizeSlackThreadByKeywordArgs,
           client,
-          userMessage: {
-            content: "come up with a nice error message for: " + query,
-            channel,
-            messageTs: "",
-            parentMessageTs: "",
-          },
-          messageSenderId: "user",
-          context: [DEFAULT_AI_CONTEXT],
-        })
-
-        return aiResponse
-      case TOOL_NAME.SUMMARIZE_SLACK_THREAD_BY_TS:
-        const tsToolArguments = args as unknown as SummarizeSlackThreadByTSArgs
-        const slackThread = await this.slackService.getThreadReplies({
-          ts: tsToolArguments.ts,
           channel,
+          query,
         })
-
-        console.log(">>>> slackThread", slackThread.messages)
-
-        if (slackThread?.messages?.length) {
-          return await this.getAiResponse({
-            channel,
-            client,
-            userMessage: {
-              content:
-                "Get me a summarization of the messages given as context",
-              channel,
-              messageTs: "",
-              parentMessageTs: "",
-            },
-            messageSenderId: "system",
-            context: [
-              DEFAULT_AI_CONTEXT,
-              getContextObjectFromMessage(
-                getSummarizationPrompt(
-                  slackThread.messages?.reduce((acc: string[], message) => {
-                    if (message && message.text) {
-                      acc.push(message.text)
-                    }
-                    return acc
-                  }, []) || []
-                )
-              ),
-            ],
-          })
-        }
+      case TOOL_NAME.SUMMARIZE_SLACK_THREAD_BY_TS:
+        return this.getSlackThreadByTS({
+          args: args as unknown as SummarizeSlackThreadByTSArgs,
+          client,
+          channel,
+          query,
+        })
 
       default:
         return CUSTOM_TOOL_DEFAULT_MESSAGE
@@ -227,16 +253,19 @@ class AiService {
     channel,
     client,
     messageSenderId,
+    includeLatestMessages = true,
   }: GetAiResponseProps): Promise<string | null> => {
     const message = {
       role: MESSAGE_ROLE.USER,
       content: userMessage.content,
     } as OpenAI.Chat.Completions.ChatCompletionMessageParam
 
-    const latestMessages = await this.pineconeService.getLatestMessages({
-      indexName: VIBRANIUM_SLACK_BOT,
-      count: 3,
-    })
+    const latestMessages = includeLatestMessages
+      ? await this.pineconeService.getLatestMessages({
+          indexName: VIBRANIUM_SLACK_BOT,
+          count: 3,
+        })
+      : []
 
     const hasTools = !!tools?.length
     const response = await this.openAi.chat.completions.create({
