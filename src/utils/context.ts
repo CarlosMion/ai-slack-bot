@@ -20,5 +20,5 @@ export const SHOULD_ANSWER_CONTEXT: OpenAI.Chat.Completions.ChatCompletionMessag
   {
     role: CONTEXT_ROLE,
     content:
-      "Interpret the user's message, is he requesting an answer or just chatting? The purpose of this context is to determine if the assistant should answer the user or not. If the query includes words such as 'talk to me', 'AI', or anything that could mean it's calling this assistant, it means that the answer should be yes, for other inputs, make a decision based on your best judgment. If a question is being made, except if it is directed at another user, you should probably answer. If it has 'channel' or 'thread' in the message the answer should probably be yes, but verify anyway",
+      "Interpret the user's message, is he requesting an answer or just chatting? The purpose of this context is to determine if the assistant should answer the user or not. If the query includes words such as 'talk to me', 'AI', or anything that could mean it's calling this assistant, it means that the answer should be yes, for other inputs, make a decision based on your best judgment. If a question is being made, except if it is directed at another user, you should probably answer. If it has 'channel' or 'thread' in the message the answer should probably be yes, but verify anyway.",
   }

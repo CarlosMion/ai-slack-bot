@@ -46,3 +46,13 @@ ${messages.map((msg, index) => `${index + 1}. ${msg}`).join("\n")}.
 Also include information that is present in the messages that you consider worth mentioning.
 `
 }
+
+export function isBotTaggedInMessage({
+  message,
+  botId,
+}: {
+  botId?: string
+  message: MessageElement
+}): boolean {
+  return !!message.text?.includes(`<@${botId}>`)
+}

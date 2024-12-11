@@ -3,6 +3,7 @@ import AiService from "./services/ai.service"
 import { SUMMARIZE_SLACK_THREAD_TOOL } from "./utils/tools"
 import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 import { DEFAULT_AI_CONTEXT } from "./utils/context"
+import { isBotTaggedInMessage } from "./utils/common"
 
 class SlackBotApp {
   private slackClient: App
@@ -38,10 +39,19 @@ class SlackBotApp {
 
   listenToMessages() {
     try {
-      this.slackClient.message(async ({ message, say, client }) => {
-        console.log("Message received:", message)
+      this.slackClient.message(async ({ message, say, client, body }) => {
         try {
           const messageElement = message as MessageElement
+          if (
+            isBotTaggedInMessage({
+              message: messageElement,
+              botId: body.authorizations?.[0].user_id,
+            })
+          ) {
+            return
+          }
+          console.log("Message received:", message)
+
           const shouldAnswerUser = await this.aiService.shouldAnswerQuery(
             messageElement
           )
