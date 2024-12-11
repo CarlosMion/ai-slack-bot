@@ -5,7 +5,6 @@ import {
 } from "@pinecone-database/pinecone"
 
 import SlackService from "./slack.service"
-import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 import {
   CreatePineconeIndexProps,
   DeleteVectorProps,
