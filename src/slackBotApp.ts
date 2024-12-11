@@ -1,11 +1,15 @@
 import { App } from "@slack/bolt"
 import AiService from "./services/ai.service"
-import { SUMMARIZE_SLACK_THREAD_TOOL } from "./utils/tools"
+import {
+  SUMMARIZE_SLACK_THREAD_TOOL,
+  TAGGED_SUMMARIZE_TOOL,
+} from "./utils/tools"
 import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 import { DEFAULT_AI_CONTEXT } from "./utils/context"
 import { isBotTaggedInMessage, isDeletingMessage } from "./utils/common"
-import { MESSAGE_SUBTYPE, VIBRANIUM_SLACK_BOT } from "./constants"
+import { VIBRANIUM_SLACK_BOT } from "./constants"
 import PineconeService from "./services/pinecone.service"
+import { AnswerProps } from "./types/openAi"
 
 class SlackBotApp {
   private slackClient: App
@@ -41,10 +45,65 @@ class SlackBotApp {
     }
   }
 
+  private async answer({
+    content,
+    channel,
+    messageSenderId,
+    threadTs,
+    say,
+  }: AnswerProps) {
+    this.aiService.addAssistantMessageToHistory(
+      {
+        content,
+        messageTs: new Date().toISOString(),
+        parentMessageTs: "",
+        channel,
+      },
+      messageSenderId
+    )
+    if (threadTs) {
+      return say({ text: content, thread_ts: threadTs })
+    }
+    say(content)
+  }
+
   listenToMentions() {
-    this.slackClient.event("app_mention", async ({ event, say, body }) => {
-      const { text, thread_ts } = event
-    })
+    this.slackClient.event(
+      "app_mention",
+      async ({ event, say, body, client }) => {
+        const { text, thread_ts, ts, channel, user } = event
+
+        /** if not mentioning in a thread, continue to normal flow */
+        // if (!thread_ts) {
+        const answer = await this.aiService.getAiResponse({
+          userMessage: {
+            content: text,
+            messageTs: ts,
+            parentMessageTs: thread_ts,
+            channel,
+          },
+
+          context: [DEFAULT_AI_CONTEXT],
+          tools: [...(thread_ts ? [TAGGED_SUMMARIZE_TOOL] : [])],
+          client,
+          channel: channel,
+          messageSenderId: user || "",
+        })
+
+        if (answer) {
+          this.answer({
+            channel,
+            content: answer,
+            messageSenderId: user || "",
+            threadTs: thread_ts,
+            say,
+          })
+        } else {
+          say("Sorry, I could not understand or process that.")
+        }
+      }
+      // }
+    )
   }
 
   listenToMessages() {
@@ -108,16 +167,12 @@ class SlackBotApp {
               messageSenderId
             )
             if (answer) {
-              this.aiService.addAssistantMessageToHistory(
-                {
-                  content: answer,
-                  messageTs: new Date().toISOString(),
-                  parentMessageTs: "",
-                  channel: message.channel,
-                },
-                messageSenderId
-              )
-              say(answer)
+              this.answer({
+                channel: message.channel,
+                content: answer,
+                messageSenderId,
+                say,
+              })
             } else {
               say("Sorry, I could not understand or process that.")
             }

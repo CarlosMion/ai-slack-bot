@@ -42,7 +42,7 @@ class PineconeService {
     this.initializeIndex(VIBRANIUM_SLACK_BOT)
   }
 
-  async getSlackThread({
+  async getSlackThreadByKeyword({
     channel,
     keyword,
   }: GetSlackThreadProps): Promise<string[] | undefined> {
