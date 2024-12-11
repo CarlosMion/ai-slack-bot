@@ -51,7 +51,7 @@ class SlackBotApp {
     messageSenderId,
     threadTs,
     say,
-  }: AnswerProps) {
+  }: AnswerProps): Promise<void> {
     this.aiService.addAssistantMessageToHistory(
       {
         content,
@@ -62,7 +62,8 @@ class SlackBotApp {
       messageSenderId
     )
     if (threadTs) {
-      return say({ text: content, thread_ts: threadTs })
+      say({ text: content, thread_ts: threadTs })
+      return
     }
     say(content)
   }
@@ -117,6 +118,7 @@ class SlackBotApp {
               botId: body.authorizations?.[0].user_id,
             })
           ) {
+            // skip if bot is tagged in the message
             return
           }
 
@@ -127,6 +129,7 @@ class SlackBotApp {
               message: messageElement,
             })
           ) {
+            // also skip answering if a message is being deleted
             return this.pineconeService.deleteVectors({
               indexName: VIBRANIUM_SLACK_BOT,
               messageTs: messageElement.ts,
@@ -137,47 +140,48 @@ class SlackBotApp {
           const shouldAnswerUser = await this.aiService.shouldAnswerQuery(
             messageElement
           )
-          if (shouldAnswerUser && messageElement.text) {
-            say("Processing your request, please wait a moment...")
-            const messageSenderId = messageElement.user || ""
-            const answer = await this.aiService.getAiResponse({
-              userMessage: {
-                content: messageElement.text,
+          if (!shouldAnswerUser || !messageElement.text) {
+            // skip if the message is is not targeted at the bot or is not relevant
+            return
+          }
+          say("Processing your request, please wait a moment...")
+          const messageSenderId = messageElement.user || ""
+          const answer = await this.aiService.getAiResponse({
+            userMessage: {
+              content: messageElement.text,
+              messageTs: messageElement.ts || "",
+              parentMessageTs: messageElement.thread_ts || "",
+              channel: message.channel,
+            },
+
+            context: [DEFAULT_AI_CONTEXT],
+            tools: [SUMMARIZE_SLACK_THREAD_TOOL],
+            client,
+            channel: message.channel,
+            messageSenderId,
+          })
+
+          this.aiService.addUserMessagesToHistory(
+            [
+              {
+                content: messageElement.text || "",
+                channel: message.channel,
                 messageTs: messageElement.ts || "",
                 parentMessageTs: messageElement.thread_ts || "",
-                channel: message.channel,
               },
-
-              context: [DEFAULT_AI_CONTEXT],
-              tools: [SUMMARIZE_SLACK_THREAD_TOOL],
-              client,
+            ],
+            messageSenderId
+          )
+          if (answer) {
+            return this.answer({
               channel: message.channel,
+              content: answer,
               messageSenderId,
+              say,
             })
-
-            this.aiService.addUserMessagesToHistory(
-              [
-                {
-                  content: messageElement.text || "",
-                  channel: message.channel,
-                  messageTs: messageElement.ts || "",
-                  parentMessageTs: messageElement.thread_ts || "",
-                },
-              ],
-              messageSenderId
-            )
-            if (answer) {
-              this.answer({
-                channel: message.channel,
-                content: answer,
-                messageSenderId,
-                say,
-              })
-            } else {
-              say("Sorry, I could not understand or process that.")
-            }
           }
-          return
+          /** Let the user know if it was suppose to answer but couldn't find one*/
+          say("Sorry, I could not understand or process that.")
         } catch (error) {
           say(
             "Sorry, There was an internal error while processing your request.\n error: " +
