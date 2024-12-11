@@ -16,6 +16,9 @@ export interface GetAiResponseProps {
   includeLatestMessages?: boolean
 }
 
+export const AI_MODEL = "gpt-4o-mini"
+export const EMBEDDINGS_MODEL = "text-embedding-3-small"
+
 export const SUMMARIZATION_DEFAULT_QUERY =
   "Please provide a concise and comprehensive summary of the following messages, highlighting the key points and any important details."
 

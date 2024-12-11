@@ -1,5 +1,6 @@
 import { OpenAI } from "openai"
 import {
+  AI_MODEL,
   GetAiResponseProps,
   GetSlackThreadByKeywordProps,
   GetSlackThreadByTSProps,
@@ -8,11 +9,7 @@ import {
   SUMMARIZATION_DEFAULT_QUERY,
   TOOL_NAME,
 } from "../types/openAi"
-import {
-  AI_MODEL,
-  CUSTOM_TOOL_DEFAULT_MESSAGE,
-  VIBRANIUM_SLACK_BOT,
-} from "../constants"
+import { CUSTOM_TOOL_DEFAULT_MESSAGE, VIBRANIUM_SLACK_BOT } from "../constants"
 import {
   CallCustomToolProps,
   SummarizeSlackThreadByKeywordArgs,
@@ -176,7 +173,7 @@ class AiService {
     })
   }
 
-  async addMessageToHistory(info: EmbeddingInfo) {
+  private async addMessageToHistory(info: EmbeddingInfo) {
     const pineconeObject =
       await this.pineconeService.generatePineconeUpsertObject({ ...info })
 

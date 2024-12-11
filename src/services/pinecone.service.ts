@@ -22,7 +22,7 @@ import {
 } from "../constants"
 import { v4 as uuidv4 } from "uuid"
 import { OpenAI } from "openai"
-import { MESSAGE_ROLE } from "../types/openAi"
+import { EMBEDDINGS_MODEL, MESSAGE_ROLE } from "../types/openAi"
 import { GetSlackThreadProps } from "../types/slack"
 
 class PineconeService {
@@ -62,12 +62,12 @@ class PineconeService {
     return threadMessages
   }
 
-  async isIndexInitialized() {
+  private async isIndexInitialized() {
     const indexes = await this.listPineconeIndexes()
     return !!indexes?.length
   }
 
-  async populatePineconeIndex() {
+  private async populatePineconeIndex() {
     try {
       const slackChannels = await this.slackService.getSlackChannels()
 
@@ -105,7 +105,7 @@ class PineconeService {
     }
   }
 
-  async initializeIndex(name: string) {
+  private async initializeIndex(name: string) {
     const isPineconeIndexInitialized = await this.isIndexInitialized()
     if (!isPineconeIndexInitialized) {
       await this.createPineconeIndex({ name })
@@ -114,10 +114,10 @@ class PineconeService {
     }
   }
 
-  async generateEmbeddings(input: string | string[]) {
+  private async generateEmbeddings(input: string | string[]) {
     const response = await this.openAi.embeddings.create({
       input: input,
-      model: "text-embedding-3-small",
+      model: EMBEDDINGS_MODEL,
     })
     return response.data.map((item) => item.embedding).flat()
   }
@@ -170,7 +170,7 @@ class PineconeService {
     }, [])
   }
 
-  async queryEmbeddings({
+  private async queryEmbeddings({
     question,
     indexName,
     topK = 100,
@@ -233,16 +233,16 @@ class PineconeService {
     await dbIndex.upsert(vectors)
   }
 
-  getIndex<T extends RecordMetadata>(indexName: string) {
+  private getIndex<T extends RecordMetadata>(indexName: string) {
     return this.pinecone.index<T>(indexName)
   }
 
-  async listPineconeIndexes() {
+  private async listPineconeIndexes() {
     const { indexes } = await this.pinecone.listIndexes()
     return indexes
   }
 
-  async createPineconeIndex({ name }: CreatePineconeIndexProps) {
+  private async createPineconeIndex({ name }: CreatePineconeIndexProps) {
     await this.pinecone.createIndex({
       name,
       dimension: EMBEDDING_DIMENSIONS,

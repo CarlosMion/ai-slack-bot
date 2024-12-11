@@ -67,7 +67,7 @@ class SlackBotApp {
     say(content)
   }
 
-  listenToMentions() {
+  private listenToMentions() {
     this.slackClient.event(
       "app_mention",
       async ({ event, say, body, client }) => {
@@ -106,7 +106,7 @@ class SlackBotApp {
     )
   }
 
-  listenToMessages() {
+  private listenToMessages() {
     try {
       this.slackClient.message(async ({ message, say, client, body }) => {
         try {

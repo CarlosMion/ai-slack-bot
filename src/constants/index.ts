@@ -7,8 +7,6 @@ export const THREAD_KEYWORDS = ["replies", "thread", "reply", "threads"]
 export const MAX_REQUEST_TOKENS = 700
 export const EMBEDDING_DIMENSIONS = 1536
 
-export const AI_MODEL = "gpt-4o-mini"
-
 export const AWS_REGION = "us-east-1"
 export const CLOUD = "aws"
 
