@@ -3,6 +3,7 @@ import { EmbeddingInfo } from "../types/pinecone"
 import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 import { OpenAI } from "openai"
 import { CONTEXT_ROLE } from "./context"
+import { MESSAGE_SUBTYPE } from "../constants"
 
 export function isMessageRelated({
   match,
@@ -45,4 +46,24 @@ ${messages.map((msg, index) => `${index + 1}. ${msg}`).join("\n")}.
 
 Also include information that is present in the messages that you consider worth mentioning.
 `
+}
+
+export function isBotTaggedInMessage({
+  message,
+  botId,
+}: {
+  botId?: string
+  message: MessageElement
+}): boolean {
+  return !!message.text?.includes(`<@${botId}>`)
+}
+
+export function isDeletingMessage({
+  message,
+}: {
+  message: MessageElement
+}): boolean {
+  return (
+    !!message.subtype && message.subtype === MESSAGE_SUBTYPE.MESSAGE_DELETED
+  )
 }

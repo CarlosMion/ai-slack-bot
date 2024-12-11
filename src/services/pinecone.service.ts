@@ -3,19 +3,20 @@ import {
   PineconeRecord,
   RecordMetadata,
 } from "@pinecone-database/pinecone"
+
 import SlackService from "./slack.service"
-import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 import {
   CreatePineconeIndexProps,
+  DeleteVectorProps,
   EmbeddingInfo,
   QueryEmbeddingsProps,
-  QueryVectorsProps,
   UpsertVectorsProps,
 } from "../types/pinecone"
 import {
   AWS_REGION,
   CLOUD,
   EMBEDDING_DIMENSIONS,
+  EMBEDDINGS_MODEL,
   VIBRANIUM_SLACK_BOT,
   ZERO_VECTOR,
 } from "../constants"
@@ -41,7 +42,7 @@ class PineconeService {
     this.initializeIndex(VIBRANIUM_SLACK_BOT)
   }
 
-  async getSlackThread({
+  async getSlackThreadByKeyword({
     channel,
     keyword,
   }: GetSlackThreadProps): Promise<string[] | undefined> {
@@ -61,12 +62,12 @@ class PineconeService {
     return threadMessages
   }
 
-  async isIndexInitialized() {
+  private async isIndexInitialized() {
     const indexes = await this.listPineconeIndexes()
     return !!indexes?.length
   }
 
-  async populatePineconeIndex() {
+  private async populatePineconeIndex() {
     try {
       const slackChannels = await this.slackService.getSlackChannels()
 
@@ -104,7 +105,7 @@ class PineconeService {
     }
   }
 
-  async initializeIndex(name: string) {
+  private async initializeIndex(name: string) {
     const isPineconeIndexInitialized = await this.isIndexInitialized()
     if (!isPineconeIndexInitialized) {
       await this.createPineconeIndex({ name })
@@ -113,10 +114,10 @@ class PineconeService {
     }
   }
 
-  async generateEmbeddings(input: string | string[]) {
+  private async generateEmbeddings(input: string | string[]) {
     const response = await this.openAi.embeddings.create({
       input: input,
-      model: "text-embedding-3-small",
+      model: EMBEDDINGS_MODEL,
     })
     return response.data.map((item) => item.embedding).flat()
   }
@@ -153,12 +154,13 @@ class PineconeService {
     count: number
   }): Promise<string[]> {
     const index = await this.getIndex<EmbeddingInfo>(indexName)
-
+    const tenMinutesAgo = Date.now() - 60 * 10 * 1000
     const queryResult = await index.query({
       vector: ZERO_VECTOR,
       topK: count,
       includeMetadata: true,
       includeValues: true,
+      filter: { messageTs: { $gte: tenMinutesAgo } },
     })
     return queryResult.matches.reduce((acc: string[], match) => {
       const content = match.metadata?.content
@@ -169,17 +171,61 @@ class PineconeService {
     }, [])
   }
 
-  async queryEmbeddings({ question, indexName }: QueryEmbeddingsProps) {
+  private async queryEmbeddings({
+    question,
+    indexName,
+    topK = 100,
+  }: QueryEmbeddingsProps) {
     const questionEmbedding = await this.generateEmbeddings(question)
 
     const index = await this.getIndex<EmbeddingInfo>(indexName)
     const queryResult = await index.query({
       vector: questionEmbedding,
-      topK: 100,
+      topK,
       includeMetadata: true,
       includeValues: true,
     })
     return queryResult.matches.filter((result) => (result.score || 0) > 0.5)
+  }
+
+  async deleteVectors({
+    indexName,
+    messageTs,
+    messageText,
+  }: DeleteVectorProps) {
+    if (!messageTs) {
+      throw new Error("messageTs is required to delete vectors")
+    }
+
+    if (!messageText) {
+      throw new Error("messageText is required to delete vectors")
+    }
+
+    const dbIndex = this.getIndex<EmbeddingInfo>(indexName)
+    try {
+      /** THIS IS THE RIGHT WAY OF DOING IT, BUT FREE PLAN LIMITS THIS FUNCTIONALITY */
+      // const deletedMessage = await dbIndex.deleteMany({
+      //   filter: { metadata: { messageTs } },
+      // })
+
+      /** ALTERNATIVE WAY FOR FREE PLAN */
+      const queryResponse = await this.queryEmbeddings({
+        indexName,
+        topK: 1,
+        question: messageText,
+      })
+
+      if (!queryResponse.length) {
+        console.warn("Message embedding not found for deletion")
+        return
+      }
+
+      const embeddingId = queryResponse[0].id
+      await dbIndex.deleteOne(embeddingId)
+      console.log("Message embedding deleted successfully:", embeddingId)
+    } catch (error) {
+      console.error("Error deleting message:", error)
+    }
   }
 
   async upsertVectors({ indexName, vectors }: UpsertVectorsProps) {
@@ -188,16 +234,16 @@ class PineconeService {
     await dbIndex.upsert(vectors)
   }
 
-  getIndex<T extends RecordMetadata>(indexName: string) {
+  private getIndex<T extends RecordMetadata>(indexName: string) {
     return this.pinecone.index<T>(indexName)
   }
 
-  async listPineconeIndexes() {
+  private async listPineconeIndexes() {
     const { indexes } = await this.pinecone.listIndexes()
     return indexes
   }
 
-  async createPineconeIndex({ name }: CreatePineconeIndexProps) {
+  private async createPineconeIndex({ name }: CreatePineconeIndexProps) {
     await this.pinecone.createIndex({
       name,
       dimension: EMBEDDING_DIMENSIONS,

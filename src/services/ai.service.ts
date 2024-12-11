@@ -1,6 +1,8 @@
 import { OpenAI } from "openai"
 import {
   GetAiResponseProps,
+  GetSlackThreadByKeywordProps,
+  GetSlackThreadByTSProps,
   MESSAGE_ROLE,
   MessageEmbeddingInput,
   TOOL_NAME,
@@ -8,9 +10,14 @@ import {
 import {
   AI_MODEL,
   CUSTOM_TOOL_DEFAULT_MESSAGE,
+  SUMMARIZATION_DEFAULT_QUERY,
   VIBRANIUM_SLACK_BOT,
 } from "../constants"
-import { CallCustomToolProps, SummarizeSlackThreadArgs } from "../types/slack"
+import {
+  CallCustomToolProps,
+  SummarizeSlackThreadByKeywordArgs,
+  SummarizeSlackThreadByTSArgs,
+} from "../types/slack"
 import { DEFAULT_AI_CONTEXT, SHOULD_ANSWER_CONTEXT } from "../utils/context"
 import PineconeService from "./pinecone.service"
 import { EmbeddingInfo } from "../types/pinecone"
@@ -20,23 +27,118 @@ import {
 } from "../utils/common"
 import { ANSWER_QUERY_TOOL } from "../utils/tools"
 import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
+import SlackService from "./slack.service"
 
 class AiService {
   private openAi: OpenAI
   private pineconeService: PineconeService
+  private slackService: SlackService
 
   constructor({
     pineconeService,
     openAi,
+    slackService,
   }: {
     pineconeService: PineconeService
     openAi: OpenAI
+    slackService: SlackService
   }) {
     this.openAi = openAi
     this.pineconeService = pineconeService
+    this.slackService = slackService
   }
 
-  async callCustomTool({
+  private async getSlackThreadByKeyword({
+    args,
+    channel,
+    client,
+    query,
+  }: GetSlackThreadByKeywordProps) {
+    const threadMessages = await this.pineconeService.getSlackThreadByKeyword({
+      channel,
+      keyword: args.keywords,
+      client,
+    })
+
+    if (threadMessages?.length) {
+      return await this.getAiResponse({
+        channel,
+        client,
+        userMessage: {
+          content: SUMMARIZATION_DEFAULT_QUERY,
+          channel,
+          messageTs: "",
+          parentMessageTs: "",
+        },
+        messageSenderId: "system",
+        context: [
+          DEFAULT_AI_CONTEXT,
+          getContextObjectFromMessage(getSummarizationPrompt(threadMessages)),
+        ],
+      })
+    }
+
+    const aiResponse = await this.getAiResponse({
+      channel,
+      client,
+      userMessage: {
+        content: "come up with a nice error message for: " + query,
+        channel,
+        messageTs: "",
+        parentMessageTs: "",
+      },
+      messageSenderId: MESSAGE_ROLE.SYSTEM,
+      context: [DEFAULT_AI_CONTEXT],
+    })
+
+    return aiResponse
+  }
+
+  private async getSlackThreadByTS({
+    args,
+    channel,
+    client,
+    query,
+  }: GetSlackThreadByTSProps) {
+    const slackThread = await this.slackService.getThreadReplies({
+      ts: args.ts,
+      channel,
+    })
+
+    const messages = slackThread?.messages
+
+    if (messages?.length) {
+      return await this.getAiResponse({
+        channel,
+        client,
+        includeLatestMessages: false,
+        userMessage: {
+          content: SUMMARIZATION_DEFAULT_QUERY,
+          channel,
+          messageTs: "",
+          parentMessageTs: "",
+        },
+        messageSenderId: MESSAGE_ROLE.SYSTEM,
+        context: [
+          DEFAULT_AI_CONTEXT,
+          getContextObjectFromMessage(
+            getSummarizationPrompt(
+              messages?.reduce((acc: string[], message) => {
+                if (message && message.text) {
+                  acc.push(message.text)
+                }
+                return acc
+              }, []) || []
+            )
+          ),
+        ],
+      })
+    }
+
+    return CUSTOM_TOOL_DEFAULT_MESSAGE
+  }
+
+  private async callCustomTool({
     toolName,
     channel,
     args,
@@ -44,55 +146,37 @@ class AiService {
     query,
   }: CallCustomToolProps): Promise<string | null> {
     switch (toolName) {
-      case TOOL_NAME.SUMMARIZE_SLACK_THREAD_:
-        const toolArguments = args as unknown as SummarizeSlackThreadArgs
-        const threadMessages = await this.pineconeService.getSlackThread({
-          channel,
-          keyword: toolArguments.keywords,
+      case TOOL_NAME.SUMMARIZE_SLACK_THREAD_BY_KEYWORD:
+        return this.getSlackThreadByKeyword({
+          args: args as unknown as SummarizeSlackThreadByKeywordArgs,
           client,
+          channel,
+          query,
+        })
+      case TOOL_NAME.SUMMARIZE_SLACK_THREAD_BY_TS:
+        return this.getSlackThreadByTS({
+          args: args as unknown as SummarizeSlackThreadByTSArgs,
+          client,
+          channel,
+          query,
         })
 
-        if (threadMessages?.length) {
-          return await this.getAiResponse({
-            channel,
-            client,
-            userMessage: {
-              content:
-                "Get me a summarization of the messages given as context",
-              channel,
-              messageTs: "",
-              parentMessageTs: "",
-            },
-            messageSenderId: "system",
-            context: [
-              DEFAULT_AI_CONTEXT,
-              getContextObjectFromMessage(
-                getSummarizationPrompt(threadMessages)
-              ),
-            ],
-          })
-        }
-
-        const aiResponse = await this.getAiResponse({
-          channel,
-          client,
-          userMessage: {
-            content: "come up with a nice error message for: " + query,
-            channel,
-            messageTs: "",
-            parentMessageTs: "",
-          },
-          messageSenderId: "user",
-          context: [DEFAULT_AI_CONTEXT],
-        })
-
-        return aiResponse
       default:
         return CUSTOM_TOOL_DEFAULT_MESSAGE
     }
   }
 
-  async addMessageToHistory(info: EmbeddingInfo) {
+  async deleteMessageFromHistory(info: EmbeddingInfo) {
+    const pineconeObject =
+      await this.pineconeService.generatePineconeUpsertObject({ ...info })
+
+    this.pineconeService.upsertVectors({
+      indexName: VIBRANIUM_SLACK_BOT,
+      vectors: [pineconeObject],
+    })
+  }
+
+  private async addMessageToHistory(info: EmbeddingInfo) {
     const pineconeObject =
       await this.pineconeService.generatePineconeUpsertObject({ ...info })
 
@@ -106,6 +190,7 @@ class AiService {
     this.addMessageToHistory({
       role: MESSAGE_ROLE.ASSISTANT,
       user,
+      parentMessageTs: message.parentMessageTs || "",
       ...message,
     })
   }
@@ -115,6 +200,7 @@ class AiService {
       this.addMessageToHistory({
         role: MESSAGE_ROLE.USER,
         user,
+        parentMessageTs: message.parentMessageTs || "",
         ...message,
       })
     )
@@ -125,6 +211,7 @@ class AiService {
       this.addMessageToHistory({
         role: MESSAGE_ROLE.TOOL,
         user,
+        parentMessageTs: message.parentMessageTs || "",
         ...message,
       })
     )
@@ -166,17 +253,19 @@ class AiService {
     channel,
     client,
     messageSenderId,
+    includeLatestMessages = true,
   }: GetAiResponseProps): Promise<string | null> => {
     const message = {
       role: MESSAGE_ROLE.USER,
       content: userMessage.content,
     } as OpenAI.Chat.Completions.ChatCompletionMessageParam
 
-    const latestMessages = await this.pineconeService.getLatestMessages({
-      indexName: VIBRANIUM_SLACK_BOT,
-      count: 3,
-    })
-
+    const latestMessages = includeLatestMessages
+      ? await this.pineconeService.getLatestMessages({
+          indexName: VIBRANIUM_SLACK_BOT,
+          count: 3,
+        })
+      : []
     const hasTools = !!tools?.length
     const response = await this.openAi.chat.completions.create({
       model: AI_MODEL,
@@ -202,7 +291,7 @@ class AiService {
           response.choices[0].message.tool_calls?.[0].function.arguments
         const args = JSON.parse(toolArguments || "")
         const toolResponse = await this.callCustomTool({
-          args,
+          args: { ...args, ts: userMessage.parentMessageTs },
           toolName,
           client,
           channel,

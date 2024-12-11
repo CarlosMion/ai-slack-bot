@@ -25,8 +25,11 @@ export interface CallCustomToolProps {
   query: string
 }
 
-export interface SummarizeSlackThreadArgs {
+export interface SummarizeSlackThreadByKeywordArgs {
   keywords: string
+}
+export interface SummarizeSlackThreadByTSArgs {
+  ts: string
 }
 
 export interface GetHistoryProps {
