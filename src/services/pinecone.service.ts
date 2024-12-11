@@ -3,13 +3,14 @@ import {
   PineconeRecord,
   RecordMetadata,
 } from "@pinecone-database/pinecone"
+
 import SlackService from "./slack.service"
 import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 import {
   CreatePineconeIndexProps,
+  DeleteVectorProps,
   EmbeddingInfo,
   QueryEmbeddingsProps,
-  QueryVectorsProps,
   UpsertVectorsProps,
 } from "../types/pinecone"
 import {
@@ -169,17 +170,61 @@ class PineconeService {
     }, [])
   }
 
-  async queryEmbeddings({ question, indexName }: QueryEmbeddingsProps) {
+  async queryEmbeddings({
+    question,
+    indexName,
+    topK = 100,
+  }: QueryEmbeddingsProps) {
     const questionEmbedding = await this.generateEmbeddings(question)
 
     const index = await this.getIndex<EmbeddingInfo>(indexName)
     const queryResult = await index.query({
       vector: questionEmbedding,
-      topK: 100,
+      topK,
       includeMetadata: true,
       includeValues: true,
     })
     return queryResult.matches.filter((result) => (result.score || 0) > 0.5)
+  }
+
+  async deleteVectors({
+    indexName,
+    messageTs,
+    messageText,
+  }: DeleteVectorProps) {
+    if (!messageTs) {
+      throw new Error("messageTs is required to delete vectors")
+    }
+
+    if (!messageText) {
+      throw new Error("messageText is required to delete vectors")
+    }
+
+    const dbIndex = this.getIndex<EmbeddingInfo>(indexName)
+    try {
+      /** THIS IS THE RIGHT WAY OF DOING IT, BUT FREE PLAN LIMITS THIS FUNCTIONALITY */
+      // const deletedMessage = await dbIndex.deleteMany({
+      //   filter: { metadata: { messageTs } },
+      // })
+
+      /** ALTERNATIVE WAY FOR FREE PLAN */
+      const queryResponse = await this.queryEmbeddings({
+        indexName,
+        topK: 1,
+        question: messageText,
+      })
+
+      if (!queryResponse.length) {
+        console.warn("Message embedding not found for deletion")
+        return
+      }
+
+      const embeddingId = queryResponse[0].id
+      await dbIndex.deleteOne(embeddingId)
+      console.log("Message embedding deleted successfully:", embeddingId)
+    } catch (error) {
+      console.error("Error deleting message:", error)
+    }
   }
 
   async upsertVectors({ indexName, vectors }: UpsertVectorsProps) {

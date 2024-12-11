@@ -17,13 +17,14 @@ export interface UpsertVectorsProps {
   indexName: string
   vectors: PineconeRecord<EmbeddingInfo>[]
 }
-
-export interface QueryVectorsProps {
+export interface DeleteVectorProps {
   indexName: string
-  entriesLimit?: number
+  messageTs?: string
+  messageText?: string
 }
 
 export interface QueryEmbeddingsProps {
   question: string
   indexName: string
+  topK?: number
 }

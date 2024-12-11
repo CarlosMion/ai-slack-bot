@@ -92,6 +92,16 @@ class AiService {
     }
   }
 
+  async deleteMessageFromHistory(info: EmbeddingInfo) {
+    const pineconeObject =
+      await this.pineconeService.generatePineconeUpsertObject({ ...info })
+
+    this.pineconeService.upsertVectors({
+      indexName: VIBRANIUM_SLACK_BOT,
+      vectors: [pineconeObject],
+    })
+  }
+
   async addMessageToHistory(info: EmbeddingInfo) {
     const pineconeObject =
       await this.pineconeService.generatePineconeUpsertObject({ ...info })

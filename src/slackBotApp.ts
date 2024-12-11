@@ -3,14 +3,24 @@ import AiService from "./services/ai.service"
 import { SUMMARIZE_SLACK_THREAD_TOOL } from "./utils/tools"
 import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 import { DEFAULT_AI_CONTEXT } from "./utils/context"
-import { isBotTaggedInMessage } from "./utils/common"
+import { isBotTaggedInMessage, isDeletingMessage } from "./utils/common"
+import { MESSAGE_SUBTYPE, VIBRANIUM_SLACK_BOT } from "./constants"
+import PineconeService from "./services/pinecone.service"
 
 class SlackBotApp {
   private slackClient: App
   private aiService: AiService
+  private pineconeService: PineconeService
 
-  constructor(aiService: AiService) {
+  constructor({
+    aiService,
+    pineconeService,
+  }: {
+    aiService: AiService
+    pineconeService: PineconeService
+  }) {
     this.aiService = aiService
+    this.pineconeService = pineconeService
     this.slackClient = new App({
       token: process.env.SLACK_BOT_OAUTH_TOKEN,
       signingSecret: process.env.SLACK_SIGNING_SECRET,
@@ -32,8 +42,8 @@ class SlackBotApp {
   }
 
   listenToMentions() {
-    this.slackClient.event("app_mention", async ({ event, say }) => {
-      await say(`Hi <@${event.user}>, how can I help?`)
+    this.slackClient.event("app_mention", async ({ event, say, body }) => {
+      const { text, thread_ts } = event
     })
   }
 
@@ -50,7 +60,20 @@ class SlackBotApp {
           ) {
             return
           }
+
           console.log("Message received:", message)
+
+          if (
+            isDeletingMessage({
+              message: messageElement,
+            })
+          ) {
+            return this.pineconeService.deleteVectors({
+              indexName: VIBRANIUM_SLACK_BOT,
+              messageTs: messageElement.ts,
+              messageText: messageElement.previous_message?.text || "",
+            })
+          }
 
           const shouldAnswerUser = await this.aiService.shouldAnswerQuery(
             messageElement

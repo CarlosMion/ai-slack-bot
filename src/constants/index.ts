@@ -15,3 +15,7 @@ export const CLOUD = "aws"
 export const VIBRANIUM_SLACK_BOT = "vibranium-slack-bot"
 
 export const ZERO_VECTOR = new Array(EMBEDDING_DIMENSIONS).fill(0)
+
+export enum MESSAGE_SUBTYPE {
+  MESSAGE_DELETED = "message_deleted",
+}

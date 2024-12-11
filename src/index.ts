@@ -12,7 +12,7 @@ async function main() {
   const aiService = new AiService({ openAi, pineconeService })
 
   /* Start the slack bot */
-  new SlackBotApp(aiService)
+  new SlackBotApp({ aiService, pineconeService })
 }
 
 main()
