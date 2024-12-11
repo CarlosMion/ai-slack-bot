@@ -1,15 +1,18 @@
 import { OpenAI } from "openai"
 import {
-  AI_MODEL,
   GetAiResponseProps,
   GetSlackThreadByKeywordProps,
   GetSlackThreadByTSProps,
   MESSAGE_ROLE,
   MessageEmbeddingInput,
-  SUMMARIZATION_DEFAULT_QUERY,
   TOOL_NAME,
 } from "../types/openAi"
-import { CUSTOM_TOOL_DEFAULT_MESSAGE, VIBRANIUM_SLACK_BOT } from "../constants"
+import {
+  AI_MODEL,
+  CUSTOM_TOOL_DEFAULT_MESSAGE,
+  SUMMARIZATION_DEFAULT_QUERY,
+  VIBRANIUM_SLACK_BOT,
+} from "../constants"
 import {
   CallCustomToolProps,
   SummarizeSlackThreadByKeywordArgs,

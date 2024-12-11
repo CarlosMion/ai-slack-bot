@@ -17,12 +17,13 @@ import {
   AWS_REGION,
   CLOUD,
   EMBEDDING_DIMENSIONS,
+  EMBEDDINGS_MODEL,
   VIBRANIUM_SLACK_BOT,
   ZERO_VECTOR,
 } from "../constants"
 import { v4 as uuidv4 } from "uuid"
 import { OpenAI } from "openai"
-import { EMBEDDINGS_MODEL, MESSAGE_ROLE } from "../types/openAi"
+import { MESSAGE_ROLE } from "../types/openAi"
 import { GetSlackThreadProps } from "../types/slack"
 
 class PineconeService {
